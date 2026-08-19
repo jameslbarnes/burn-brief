@@ -1166,18 +1166,22 @@
     const isToday = day === todayIso;
     const [digest, loopsData] = await Promise.all([
       window.burnBrief.digest(isToday ? undefined : day),
-      isToday ? window.burnBrief.loops().catch(() => ({ open: [], recentlyClosed: [], history: [] })) : Promise.resolve({ open: [], recentlyClosed: [], history: [] }),
+      window.burnBrief.loops().catch(() => ({ open: [], recentlyClosed: [], history: [] })),
     ]);
-    const openLoops = isToday ? (loopsData?.open || []) : [];
-    const actionHistory = isToday ? (loopsData?.history || loopsData?.recentlyClosed || []) : [];
+    // The action queue is universal: open loops are live commitments and do
+    // not change with whichever edition is being read. Ordering and wording
+    // always come from the latest edition, even beside an archive page.
+    const todayDigest = isToday ? digest : await window.burnBrief.digest().catch(() => null);
+    const openLoops = loopsData?.open || [];
+    const actionHistory = loopsData?.history || loopsData?.recentlyClosed || [];
     const actionCount = openLoops.length;
     updateTelemetry(digest, actionCount);
-    flightShell.classList.toggle("queue-collapsed", isToday && queueCollapsed);
+    flightShell.classList.toggle("queue-collapsed", queueCollapsed);
 
     queueEl.innerHTML = "";
     const queueHead = el('<div class="queue-header"><span class="micro"><b>Action queue</b></span><span class="queue-meta"><span class="micro num"></span></span></div>');
-    queueHead.querySelector(".num").textContent = isToday ? actionCount + " open" : "archive";
-    if (isToday && actionHistory.length) {
+    queueHead.querySelector(".num").textContent = actionCount + " open";
+    if (actionHistory.length) {
       const historyToggle = el('<button class="queue-history-toggle"></button>');
       historyToggle.textContent = showActionHistory ? "Hide completed" : `Show completed · ${actionHistory.length}`;
       historyToggle.setAttribute("aria-pressed", String(showActionHistory));
@@ -1188,7 +1192,7 @@
       };
       queueHead.querySelector(".queue-meta").appendChild(historyToggle);
     }
-    if (isToday) {
+    {
       const collapse = el('<button class="queue-collapse" aria-controls="queue"></button>');
       collapse.textContent = queueCollapsed ? "›" : "‹";
       collapse.title = queueCollapsed ? "Expand action queue" : "Collapse action queue";
@@ -1203,10 +1207,10 @@
     queueEl.appendChild(queueHead);
 
     const block = await digestBlock(isToday ? null : day, digest);
-    if (isToday && openLoops.length) {
-      // The loop ledger is the single source of truth. Today's digest only
+    if (openLoops.length) {
+      // The loop ledger is the single source of truth. The latest digest only
       // controls priority and supplies refreshed wording/context.
-      const digestFollowUps = digest?.followUps || [];
+      const digestFollowUps = todayDigest?.followUps || [];
       const digestByLoop = new Map(digestFollowUps.filter((fu) => fu.loopId != null).map((fu) => [fu.loopId, fu]));
       const digestOrder = new Map(digestFollowUps.filter((fu) => fu.loopId != null).map((fu, i) => [fu.loopId, i]));
       const ordered = [...openLoops].sort((a, b) => {
@@ -1251,9 +1255,9 @@
       queueEl.appendChild(followups);
     } else {
       const empty = el('<div class="queue-empty"></div>');
-      empty.textContent = isToday
-        ? (digest ? "Attention queue clear. The briefing remains here when you want the context." : "Generate today’s briefing to assemble the action queue.")
-        : "Past editions remain readable; actions stay with the live edition.";
+      empty.textContent = todayDigest
+        ? "Attention queue clear. The briefing remains here when you want the context."
+        : "Generate today’s briefing to assemble the action queue.";
       queueEl.appendChild(empty);
     }
 
