@@ -102,6 +102,25 @@ async function main(): Promise<void> {
       break;
     }
 
+    case "sourcecheck": {
+      // Cheap Full-Disk-Access probe, spawned fresh each poll so a toggle in
+      // System Settings takes effect without relaunching the app. EPERM means
+      // FDA is missing; ENOENT means WhatsApp Desktop itself isn't set up.
+      const { openSync, readSync, closeSync } = await import("node:fs");
+      const { DEFAULT_DB_PATH } = await import("./sources/mac-sqlite.js");
+      try {
+        const fd = openSync(DEFAULT_DB_PATH, "r");
+        const buf = Buffer.alloc(16);
+        readSync(fd, buf, 0, 16, 0);
+        closeSync(fd);
+        console.log(JSON.stringify({ ok: true, code: null }));
+      } catch (err) {
+        const code = err instanceof Error && "code" in err ? (err as NodeJS.ErrnoException).code : null;
+        console.log(JSON.stringify({ ok: false, code: code ?? "UNKNOWN" }));
+      }
+      break;
+    }
+
     case "bootstrap": {
       // First-run setup driven by the desktop app: init without aliases, and
       // idempotent. Records identity from the source, ingests, and keeps the

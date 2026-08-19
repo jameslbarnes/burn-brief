@@ -861,6 +861,17 @@
   .sheet-inner p strong { color: var(--ink); font-family: var(--sans); font-size: 14px; }
   .sheet-actions { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
   .sheet-actions[hidden], .fr-bio[hidden] { display: none; }
+  .perm-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    border: 1px solid var(--hairline-2); border-radius: 10px;
+    padding: 18px 22px; margin: 6px 0; background: color-mix(in srgb, var(--bg-raise) 55%, transparent);
+  }
+  .perm-card .perm-name { display: block; font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); }
+  .perm-card .perm-status { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+  .perm-card .perm-status-text { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: var(--ink-3); }
+  .perm-card button.primary { flex: none; }
+  .perm-steps, .perm-alt { font-size: 13px !important; }
+  .perm-alt[hidden] { display: none; }
   .sheet-actions button.primary { padding: 10px 22px; font-size: 15px; }
   .sheet .opt { border-left: 2px solid var(--hairline-2); padding: 2px 0 4px 18px; }
   .sheet .opt p { margin-top: 6px; }
@@ -2044,11 +2055,8 @@
       const c = await window.burnBrief.consentGrant().catch(() => null);
       if (!c || !c.granted) { btn.disabled = false; btn.textContent = "Start reading my chats"; return; }
       sheet.remove();
-      // The first edition and bio are already generating (main's
-      // firstRunSequence); the narrated sheet carries the wait.
-      firstRunPhase = "reading";
-      nav = "today";
-      showFirstRunSheet();
+      // boot() runs advanceOnboarding, which walks the remaining gates:
+      // disk access → agent CLI → the narrated first edition.
       onGranted();
     };
     document.body.appendChild(sheet);
@@ -2151,6 +2159,78 @@
     }
   }
 
+  // ---- Full Disk Access ------------------------------------------------------
+  // macOS has no prompt for Full Disk Access; the user must flip a toggle in
+  // System Settings. This sheet deep-links to the exact pane and polls (each
+  // poll is a fresh child process, so the toggle is noticed without a
+  // relaunch), advancing on its own the moment access lands.
+
+  let diskSheet = null;
+  function showDiskAccessSheet() {
+    if (diskSheet) return;
+    const sheet = el(`<div class="sheet" id="diskaccess">
+      <div class="sheet-inner">
+        <span class="micro"><b>burn/brief</b> · one permission</span>
+        <h1>Let it see WhatsApp on this Mac.</h1>
+        <div class="sheet-rule"></div>
+        <p>macOS protects the folder where WhatsApp keeps your messages.
+          Reading it — read-only, right here on your Mac — needs
+          <strong>Full Disk Access</strong>, and Apple requires you to grant
+          that yourself. One toggle:</p>
+        <div class="perm-card">
+          <div class="perm-info">
+            <span class="perm-name">Full Disk Access</span>
+            <span class="perm-status"><span class="gen-dot"></span><span class="perm-status-text">waiting for access…</span></span>
+          </div>
+          <button class="primary" id="openDiskAccess">Enable Disk Access</button>
+        </div>
+        <p class="perm-steps">System Settings opens on the right pane. Find
+          <strong>Burn Brief</strong> in the list and switch it on — if it
+          isn't listed, click <code>+</code> and pick it from Applications.
+          macOS may ask to quit the app; choose <b>Later</b>, this screen
+          notices by itself.</p>
+        <p class="perm-alt" hidden>It looks like WhatsApp Desktop isn't set up
+          on this Mac yet. Install it from whatsapp.com and sign in — this
+          screen will continue on its own.</p>
+        <span class="micro"><a class="credit-link" href="https://oneguild.nyc">A playa gift from oneguild.nyc</a></span>
+      </div>
+    </div>`);
+    sheet.querySelector("#openDiskAccess").onclick = () => window.burnBrief.openDiskAccess();
+    document.body.appendChild(sheet);
+    diskSheet = sheet;
+    const timer = setInterval(async () => {
+      const sc = await window.burnBrief.sourceCheck().catch(() => null);
+      if (!diskSheet) { clearInterval(timer); return; }
+      if (sc && sc.ok) {
+        clearInterval(timer);
+        diskSheet.remove();
+        diskSheet = null;
+        await advanceOnboarding();
+        return;
+      }
+      const missing = sc && sc.code === "ENOENT";
+      sheet.querySelector(".perm-alt").hidden = !missing;
+      sheet.querySelector(".perm-status-text").textContent =
+        missing ? "waiting for WhatsApp…" : "waiting for access…";
+    }, 2500);
+  }
+
+  // The gate sequence after consent: disk access, then an agent CLI, then the
+  // narrated first edition (or the regular app if an edition already exists).
+  async function advanceOnboarding() {
+    const sc = await window.burnBrief.sourceCheck().catch(() => null);
+    if (sc && !sc.ok) { showDiskAccessSheet(); return; }
+    const be = await window.burnBrief.backendShow().catch(() => null);
+    if (be && (be.available || []).length === 0) { showConnectScreen(); return; }
+    const existing = await window.burnBrief.digest().catch(() => null);
+    if (existing) { await render(); return; }
+    firstRunPhase = "reading";
+    nav = "today";
+    showFirstRunSheet();
+    window.burnBrief.firstRun().catch(() => {});
+    await render();
+  }
+
   // ---- connect-an-AI ---------------------------------------------------------
   // Without a logged-in agent CLI the app ingests but never briefs, and the
   // only signal was a corner tooltip. This sheet turns that dead end into a
@@ -2205,11 +2285,7 @@
         clearInterval(timer);
         sheet.remove();
         note.textContent = "";
-        firstRunPhase = "reading";
-        nav = "today";
-        showFirstRunSheet();
-        window.burnBrief.firstRun().catch(() => {});
-        await render();
+        await advanceOnboarding();
         return;
       }
       if (manual) note.textContent = "Still not found — finish the Terminal login, then it appears here.";
@@ -2242,7 +2318,11 @@
     setInterval(refreshBrcWeather, 15 * 60 * 1000);
     await render();
     await refreshLastRun();
-    await ensureBackend();
+    // No edition yet means onboarding is unfinished: walk the remaining
+    // gates. Otherwise only nudge if the agent CLI has gone missing.
+    const existing = await window.burnBrief.digest().catch(() => null);
+    if (!existing) await advanceOnboarding();
+    else await ensureBackend();
   }
 
   (async () => {

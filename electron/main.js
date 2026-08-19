@@ -378,14 +378,18 @@ app.whenReady().then(() => {
   // so it survives reinstalls of the app but not a data reset.
   ipcMain.handle("burnbrief:consent", () => engine(["consent"]));
   ipcMain.handle("burnbrief:backendShow", () => engine(["backend", "show"]));
-  ipcMain.handle("burnbrief:consentGrant", async () => {
-    const c = await engine(["consent", "grant"]);
-    if (c?.granted) firstRunSequence();
-    return c;
-  });
-  // Re-entry point for the connect-an-AI screen: once a CLI login lands,
-  // the same first-run pipeline produces the bio and first edition.
+  // Granting consent does not start the pipeline by itself: the renderer
+  // sequences the remaining gates (disk access, agent CLI) and calls
+  // burnbrief:firstRun when the road is clear.
+  ipcMain.handle("burnbrief:consentGrant", () => engine(["consent", "grant"]));
   ipcMain.handle("burnbrief:firstRun", () => { firstRunSequence(); return true; });
+  // Full-Disk-Access probe; spawned as a fresh child so a toggle in System
+  // Settings is noticed without relaunching the app.
+  ipcMain.handle("burnbrief:sourceCheck", () => engine(["sourcecheck"]));
+  ipcMain.handle("burnbrief:openDiskAccess", () => {
+    shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles");
+    return true;
+  });
   engine(["consent"])
     .then((c) => { if (c?.granted) startScheduler(false); })
     .catch(() => { /* renderer will show the consent screen */ });
