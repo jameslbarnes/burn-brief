@@ -17,7 +17,7 @@
     "release:check": "npm run check && npm test && npm run build && node --check electron/main.js && node --check electron/preload.cjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "license": "MIT",
   "repository": {

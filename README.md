@@ -61,7 +61,7 @@ See [PRIVACY.md](PRIVACY.md) for the full data-flow description.
 
 - macOS
 - WhatsApp Desktop signed in and containing your group history
-- Node.js 20 or newer
+- Node.js 22.12 or newer
 - A logged-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
   [Codex CLI](https://developers.openai.com/codex/cli/) installation
 - Full Disk Access for the terminal or agent app doing the installation

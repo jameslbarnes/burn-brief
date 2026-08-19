@@ -52,7 +52,7 @@ access method.
 
 ## Development notes
 
-- TypeScript, ESM, Node 20+. `npm run release:check` is the release gate.
+- TypeScript, ESM, Node 22.12+. `npm run release:check` is the release gate.
 - Electron spawns `node dist/cli.js`; it must not import `better-sqlite3`
   directly because Electron and Node use different native ABIs.
 - New app state lives in `~/.burn-brief/app.db` and can be overridden with
