@@ -57,6 +57,7 @@ export interface ClassifyStats {
 }
 
 export interface ClassifyProgress {
+  kind: "start" | "done";
   messagesDone: number;
   messagesTotal: number;
   itemsCreated: number;
@@ -64,6 +65,8 @@ export interface ClassifyProgress {
   titles: string[];
   /** Batches currently in flight — lets the UI show life between completions. */
   inFlight?: number;
+  /** Chat the batch belongs to, for "now reading" display. */
+  chat?: string;
 }
 
 export async function classifyPending(
@@ -92,7 +95,7 @@ export async function classifyPending(
   };
   const messagesTotal = batches.reduce((n, b) => n + b.length, 0);
   let messagesDone = 0;
-  opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: 0, titles: [] });
+  opts.onProgress?.({ kind: "start", messagesDone, messagesTotal, itemsCreated: 0, titles: [] });
 
   let nextBatch = 0;
   let inFlight = 0;
@@ -109,7 +112,7 @@ export async function classifyPending(
       const batch = i < batches.length ? batches[i] : retryQueue.shift();
       if (!batch) return;
       inFlight += 1;
-      opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles: [], inFlight });
+      opts.onProgress?.({ kind: "start", messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles: [], inFlight, chat: batch[0].chat_name });
       try {
         const candidates = await classifyBatch(backend, store, batch, identity, goals);
         stats.candidates += candidates.length;
@@ -124,9 +127,10 @@ export async function classifyPending(
         stats.messages += batch.length;
         messagesDone += batch.length;
         inFlight -= 1;
-        opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles, inFlight });
+        opts.onProgress?.({ kind: "done", messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles, inFlight, chat: batch[0].chat_name });
       } catch (err) {
         inFlight -= 1;
+        opts.onProgress?.({ kind: "done", messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles: [], inFlight, chat: batch[0].chat_name });
         if (!retried.has(batch)) {
           retried.add(batch);
           retryQueue.push(batch);

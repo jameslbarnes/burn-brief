@@ -143,7 +143,16 @@ async function main(): Promise<void> {
           .run(cutoff).changes);
       }
       const groups = source.listGroupChats().length;
-      console.log(JSON.stringify({ ...stats, skipped, groups, ownJid: store.getIdentity().ownJid }));
+      // Top recent groups by volume: the first-run sheet narrates these while
+      // inference runs, so the wait shows real, recognizable activity.
+      const topGroups = (store.db
+        .prepare(
+          `SELECT chat_name AS n, COUNT(*) AS c FROM messages
+           WHERE ts > ? AND chat_jid LIKE '%@g.us' GROUP BY chat_jid
+           ORDER BY c DESC LIMIT 6`,
+        )
+        .all(Math.floor(Date.now() / 1000) - backfillDays * 86400) as { n: string }[]).map((r) => r.n);
+      console.log(JSON.stringify({ ...stats, skipped, groups, topGroups, ownJid: store.getIdentity().ownJid }));
       source.close();
       store.close();
       break;

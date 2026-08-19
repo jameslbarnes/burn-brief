@@ -883,11 +883,14 @@
   .sheet .copy-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
   .sheet .copy-row button.ghost { font-size: 12px; }
   .sheet .check-note { min-height: 18px; }
-  /* The dusk horizon grounds every full-screen sheet. */
+  /* The user's own playa photo (when present) grounds every full-screen
+     sheet; the drawn dusk horizon is the first-install fallback. */
   .sheet::after {
-    content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 38vh;
-    background: var(--backdrop-scene) bottom center / cover no-repeat;
+    content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 44vh;
+    background: var(--backdrop-photo, var(--backdrop-scene)) bottom center / cover no-repeat;
     opacity: .3; pointer-events: none;
+    -webkit-mask-image: linear-gradient(transparent, #000 55%);
+    mask-image: linear-gradient(transparent, #000 55%);
   }
   .sheet-inner { position: relative; z-index: 1; }
 
@@ -930,6 +933,12 @@
   }
   @keyframes fr-sweep { to { left: 100%; } }
   .fr-count { display: block; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-3); }
+  .fr-reading {
+    display: block; margin-top: 4px; font-family: var(--serif); font-style: italic;
+    font-size: 12.5px; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56ch;
+  }
+  .fr-reading:empty { display: none; }
   .fr-finds { display: block; margin-top: 6px; }
   .fr-find {
     display: block; font-family: var(--sans); font-size: 12.5px; color: var(--ink-2);
@@ -2144,7 +2153,13 @@
     updateFirstRunSheet({ phase: "reading" });
   }
 
+  let frRotator = null;
+  const frReadingNow = new Set();
+
   function dismissFirstRunSheet() {
+    clearInterval(frRotator);
+    frRotator = null;
+    frReadingNow.clear();
     firstRunSheet?.remove();
     firstRunSheet = null;
   }
@@ -2172,17 +2187,40 @@
       if (det.messages) {
         detail("reading", `${Number(det.messages).toLocaleString()} messages${det.groups ? ` across ${Number(det.groups).toLocaleString()} group chats` : ""}, read right here on your Mac`);
       }
+      // Narrate inference with real, recognizable activity while it thinks.
+      const groups = det.topGroups || [];
+      if (groups.length && !frRotator) {
+        let gi = 0;
+        const tick = () => {
+          if (!firstRunSheet || !firstRunSheet.querySelector(`[data-stage="profile"].active`)) return;
+          detail("profile", `reading how you talk in “${groups[gi % groups.length]}”…`);
+          gi += 1;
+        };
+        tick();
+        frRotator = setInterval(tick, 2200);
+      }
     }
     if (d.phase === "classify-progress") {
       const holder = firstRunSheet.querySelector(`[data-stage="classify"] .fr-detail`);
       if (!holder.querySelector(".fr-bar")) {
-        holder.innerHTML = `<span class="fr-bar"><span class="fr-bar-fill"></span></span><span class="fr-count"></span><span class="fr-finds"></span>`;
+        holder.innerHTML = `<span class="fr-bar"><span class="fr-bar-fill"></span></span><span class="fr-count"></span><span class="fr-reading"></span><span class="fr-finds"></span>`;
       }
       const pct = det.messagesTotal ? Math.round((det.messagesDone / det.messagesTotal) * 100) : 0;
       holder.querySelector(".fr-bar-fill").style.width = pct + "%";
-      const passes = det.inFlight ? ` · ${det.inFlight} parallel ${det.inFlight === 1 ? "pass" : "passes"} reading` : "";
+      const passes = det.inFlight ? ` · ${det.inFlight} parallel ${det.inFlight === 1 ? "pass" : "passes"}` : "";
       holder.querySelector(".fr-count").textContent =
         `${Number(det.messagesDone).toLocaleString()} of ${Number(det.messagesTotal).toLocaleString()} recent messages weighed · ${det.itemsCreated} found${passes}`;
+      if (det.chat) {
+        if (det.kind === "start") frReadingNow.add(det.chat);
+        else frReadingNow.delete(det.chat);
+        const reading = firstRunSheet.querySelector(".fr-reading");
+        if (reading) {
+          const names = [...frReadingNow];
+          reading.textContent = names.length
+            ? `now reading ${names.slice(0, 2).join(" · ")}${names.length > 2 ? ` · +${names.length - 2} more` : ""}`
+            : "";
+        }
+      }
       const finds = holder.querySelector(".fr-finds");
       for (const t of det.titles || []) {
         const row = el(`<span class="fr-find"></span>`);
@@ -2192,7 +2230,10 @@
       while (finds.children.length > 3) finds.lastChild.remove();
     }
     if (d.phase === "bio-done") {
+      clearInterval(frRotator);
+      frRotator = null;
       mark("profile", "done");
+      detail("profile", det.profile ? "drafted — it's below" : "");
       if (det.profile) {
         const bio = firstRunSheet.querySelector(".fr-bio");
         bio.hidden = false;
@@ -2383,15 +2424,17 @@
     if (be && (be.available || []).length === 0) showConnectScreen();
   }
 
+  function loadBackdrop() {
+    if (!window.burnBrief.backdrop) return;
+    window.burnBrief.backdrop().then((u) => {
+      if (u) {
+        document.body.style.setProperty("--backdrop-photo", `url("${u}")`);
+        document.body.classList.add("has-photo");
+      }
+    }).catch(() => {});
+  }
+
   async function boot() {
-    if (window.burnBrief.backdrop) {
-      window.burnBrief.backdrop().then((u) => {
-        if (u) {
-          document.body.style.setProperty("--backdrop-photo", `url("${u}")`);
-          document.body.classList.add("has-photo");
-        }
-      }).catch(() => {});
-    }
     renderTminus();
     setInterval(renderTminus, 60 * 60 * 1000);
     refreshBrcWeather();
@@ -2406,6 +2449,9 @@
   }
 
   (async () => {
+    // Photos load before any sheet, so onboarding sits on the user's own
+    // playa imagery from the first frame when they have any.
+    loadBackdrop();
     const consent = window.burnBrief.consent
       ? await window.burnBrief.consent().catch(() => null)
       : { granted: true };

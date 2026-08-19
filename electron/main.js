@@ -461,7 +461,7 @@ async function firstRunSequence() {
   try {
     phase("reading");
     const boot = await engine(["bootstrap"], { timeoutMs: 600_000 });
-    phase("working", { messages: boot?.scanned, groups: boot?.groups });
+    phase("working", { messages: boot?.scanned, groups: boot?.groups, topGroups: boot?.topGroups });
     // Bio+goal inference and classification are independent — run them
     // concurrently, streaming per-batch classification progress to the sheet.
     const profP = engine(["profile", "infer", "--apply"], { timeoutMs: 420_000 })
