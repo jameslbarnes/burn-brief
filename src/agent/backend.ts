@@ -48,11 +48,15 @@ function run(
   args: string[],
   opts: { stdin?: string; timeoutMs: number; cwd: string },
 ): Promise<{ stdout: string; stderr: string }> {
+  // When the desktop app runs this CLI on Electron's embedded Node it sets
+  // ELECTRON_RUN_AS_NODE; that must not leak into the agent CLI's process.
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
   return new Promise((resolve, reject) => {
     const child = execFile(
       cmd,
       args,
-      { cwd: opts.cwd, timeout: opts.timeoutMs, maxBuffer: 32 * 1024 * 1024 },
+      { cwd: opts.cwd, timeout: opts.timeoutMs, maxBuffer: 32 * 1024 * 1024, env },
       (err, stdout, stderr) => {
         if (err) reject(new Error(`${cmd} failed: ${err.message}\nstderr: ${stderr.slice(0, 2000)}`));
         else resolve({ stdout, stderr });

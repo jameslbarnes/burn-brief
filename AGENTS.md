@@ -6,6 +6,11 @@ The user should not need technical knowledge. Narrate what you are doing in
 plain language, but run these steps exactly and do not substitute another data
 access method.
 
+These steps are the from-source path. If a packaged DMG is available on the
+GitHub Releases page, offer it first: it needs no npm, Node or Xcode — the
+user drags the app to Applications, and steps 3–9 apply from the app's
+Settings screen instead of the terminal.
+
 1. Confirm this is macOS and that WhatsApp Desktop is signed in.
 2. Run `npm install && npm run build`.
 3. Run `node dist/cli.js doctor`.
@@ -52,9 +57,14 @@ access method.
 
 ## Development notes
 
-- TypeScript, ESM, Node 22.12+. `npm run release:check` is the release gate.
-- Electron spawns `node dist/cli.js`; it must not import `better-sqlite3`
-  directly because Electron and Node use different native ABIs.
+- TypeScript, ESM, Node 22.13+. `npm run release:check` is the release gate.
+- SQLite access uses Node's built-in `node:sqlite` — there are no native
+  modules. Do not add any: the packaged app must stay pure-JS so it needs no
+  compiler, no Xcode and no ABI rebuilds.
+- Electron runs the CLI on its own embedded Node via `ELECTRON_RUN_AS_NODE`
+  (`process.execPath`), so the packaged app requires no system Node at all.
+- `npm run dist:mac` builds the DMG with electron-builder; the app icon is
+  regenerated with `node scripts/make-icon.mjs`.
 - New app state lives in `~/.burn-brief/app.db` and can be overridden with
   `BURN_BRIEF_HOME`. Existing `~/.whatsapp-attache` state is reused when found.
 - The WhatsApp schema is undocumented. `MacSqliteSource.probe()` verifies every

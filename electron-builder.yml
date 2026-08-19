@@ -1,0 +1,40 @@
+# Packaging for the macOS desktop app: npm run dist:mac
+# The bundle carries Electron's own Node runtime and the built CLI, so users
+# install nothing else — no system Node, no npm, no Xcode.
+appId: nyc.generalsemantics.burn-brief
+# The brand is burn/brief, but "/" cannot appear in a bundle name; the running
+# app still presents itself as burn/brief via app.setName().
+productName: Burn Brief
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**
+  - dist/**
+  - package.json
+# No asar: the CLI entrypoint is loaded by Node's ESM loader in a spawned
+# ELECTRON_RUN_AS_NODE child, where asar support is unreliable. Plain files
+# are boring and always work.
+asar: false
+npmRebuild: false
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [universal]
+  # Signs with the Developer ID Application certificate from the keychain.
+  # Notarization credentials come from the keychain profile named by
+  # APPLE_KEYCHAIN_PROFILE (created once with `xcrun notarytool
+  # store-credentials`).
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+  extendInfo:
+    NSAppleEventsUsageDescription: >-
+      burn/brief sends your daily briefing to your own iMessage account when
+      you turn on delivery in Settings. It never messages anyone else.
+dmg:
+  artifactName: "burn-brief-${version}.dmg"
+  sign: true

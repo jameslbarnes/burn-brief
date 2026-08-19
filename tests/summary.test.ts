@@ -114,9 +114,11 @@ test("keeps goal compliance out of Claude's editorial pass", async () => {
       text: "A new ride lead surfaced in today's thread.",
     }]);
 
-    const promptLog = store.db
+    // Spread each row: node:sqlite returns null-prototype objects, which
+    // deepEqual distinguishes from plain object literals.
+    const promptLog = (store.db
       .prepare(`SELECT backend, model, purpose FROM prompt_log ORDER BY id`)
-      .all() as { backend: string; model: string | null; purpose: string }[];
+      .all() as { backend: string; model: string | null; purpose: string }[]).map((r) => ({ ...r }));
     assert.deepEqual(promptLog, [
       { backend: "claude", model: null, purpose: "daily_digest" },
       { backend: "claude", model: "haiku", purpose: "goal_audit" },

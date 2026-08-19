@@ -14,14 +14,34 @@ you are already signed into. There is no burn/brief account, API key or server.
 
 ## The easiest installation
 
-Copy this link into Claude Code or Codex and say **“Install this for me”**:
+Download the app from the
+[Releases page](https://github.com/jameslbarnes/burn-brief/releases), open the
+DMG and drag **Burn Brief** into Applications. Nothing else to install — no
+Node, no npm, no Xcode. Then:
+
+1. **First open:** double-click it. The app is signed and notarized, so macOS
+   opens it without complaint.
+2. **Full Disk Access:** open System Settings → Privacy & Security → Full Disk
+   Access, enable **Burn Brief**, then quit and reopen the app. This is how it
+   reads the WhatsApp database on your Mac; macOS requires you to grant it
+   yourself.
+3. Have a logged-in [Claude Code](https://claude.com/claude-code) or
+   [Codex](https://developers.openai.com/codex/cli/) CLI — that is the
+   subscription doing the reading. Set your name and goals in **Settings**
+   inside the app.
+
+## Agent-guided installation
+
+Alternatively, copy this link into Claude Code or Codex and say **“Install
+this for me”**:
 
 **https://github.com/jameslbarnes/burn-brief**
 
-The repository contains instructions for the agent. It will install the app,
-check which agent CLI is available, ask what name you answer to, and open the
-desktop interface. The only step you may need to perform yourself is granting
-Full Disk Access when macOS asks; an agent cannot grant that permission for you.
+The repository contains instructions for the agent. It will install the app
+from source, check which agent CLI is available, ask what name you answer to,
+and open the desktop interface. The only step you may need to perform yourself
+is granting Full Disk Access when macOS asks; an agent cannot grant that
+permission for you.
 
 If you want to be extra explicit, paste this:
 
@@ -61,10 +81,12 @@ See [PRIVACY.md](PRIVACY.md) for the full data-flow description.
 
 - macOS
 - WhatsApp Desktop signed in and containing your group history
-- Node.js 22.12 or newer
 - A logged-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
   [Codex CLI](https://developers.openai.com/codex/cli/) installation
-- Full Disk Access for the terminal or agent app doing the installation
+- Full Disk Access for the app (or, when installing from source, for the
+  terminal or agent app doing the installation)
+- Node.js 22.13 or newer — **only for installing from source**; the DMG needs
+  no Node at all
 
 ## Choosing Claude or Codex
 
@@ -142,8 +164,10 @@ local item/task store ──► daily editorial briefing
         └──────────────► Electron desktop interface
 ```
 
-Electron never loads the native SQLite module. It spawns the Node CLI, keeping
-the UI and engine isolated and avoiding Electron ABI problems.
+There are no native modules: SQLite access uses Node's built-in `node:sqlite`.
+Electron runs the CLI on its own embedded Node (`ELECTRON_RUN_AS_NODE`), which
+keeps the UI and engine isolated and lets the packaged app run on a Mac with
+nothing else installed.
 
 ## Development
 
@@ -151,6 +175,7 @@ the UI and engine isolated and avoiding Electron ABI problems.
 npm install
 npm run release:check
 npm start
+npm run dist:mac   # package the DMG into release/
 ```
 
 The app is currently macOS-only because WhatsApp's local storage and the

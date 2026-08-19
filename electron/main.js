@@ -11,8 +11,35 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CLI = join(__dirname, "..", "dist", "cli.js");
+// getAppPath() is the project root in dev and Contents/Resources/app when
+// packaged, so the same expression finds the built CLI in both.
+const CLI = join(app.getAppPath(), "dist", "cli.js");
 app.setName("burn/brief");
+
+// Finder launches apps with a minimal PATH (/usr/bin:/bin:...), which would
+// hide the user's claude/codex CLI from the engine. Append the places agent
+// CLIs and node version managers actually install to.
+function widenPath() {
+  const home = homedir();
+  const extra = [
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    join(home, ".local", "bin"),        // Claude Code native installer
+    join(home, ".claude", "local"),     // Claude Code npm-local installer
+    join(home, ".codex", "bin"),
+    join(home, ".npm-global", "bin"),
+    join(home, ".volta", "bin"),
+    join(home, ".bun", "bin"),
+  ];
+  try {
+    const nvmNode = join(home, ".nvm", "versions", "node");
+    for (const v of readdirSync(nvmNode)) extra.push(join(nvmNode, v, "bin"));
+  } catch { /* no nvm */ }
+  const seen = new Set((process.env.PATH ?? "").split(":").filter(Boolean));
+  const additions = extra.filter((p) => !seen.has(p) && existsSync(p));
+  process.env.PATH = [...seen, ...additions].join(":");
+}
+widenPath();
 
 const INGEST_EVERY_MS = 60_000;
 const CLASSIFY_EVERY_MS = 15 * 60_000;
@@ -113,11 +140,14 @@ async function getBrcWeather() {
 }
 
 function engine(args, { timeoutMs = 600_000 } = {}) {
+  // The CLI runs on Electron's own embedded Node, so a packaged app needs no
+  // system Node installed at all. ELECTRON_RUN_AS_NODE turns this same binary
+  // into a plain Node runtime for the child.
   return new Promise((resolve, reject) => {
     execFile(
-      "node",
+      process.execPath,
       [CLI, ...args, "--json"],
-      { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: process.env },
+      { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
       (err, stdout, stderr) => {
         if (err) return reject(new Error(`engine ${args[0]}: ${err.message}\n${String(stderr).slice(0, 500)}`));
         const line = String(stdout).split("\n").find((l) => l.trimStart().startsWith("{") || l.trimStart().startsWith("["));

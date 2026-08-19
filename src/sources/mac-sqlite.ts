@@ -2,7 +2,7 @@
 // This schema is undocumented and can change with any WhatsApp update, so the
 // probe verifies every table/column we rely on before any query runs.
 
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,7 +34,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
 
 export class MacSqliteSource implements Source {
   readonly id = "mac-sqlite";
-  private db: Database.Database;
+  private db: DatabaseSync;
   private readonly dbPath: string;
 
   constructor(dbPath: string = DEFAULT_DB_PATH) {
@@ -42,16 +42,18 @@ export class MacSqliteSource implements Source {
     this.db = this.open();
   }
 
-  private open(): Database.Database {
+  private open(): DatabaseSync {
     try {
-      return new Database(this.dbPath, { readonly: true, fileMustExist: true });
+      // readOnly requires the file to exist; a missing DB throws like any
+      // other open failure and falls through to the snapshot path.
+      return new DatabaseSync(this.dbPath, { readOnly: true });
     } catch (err) {
       // Lock contention or torn WAL state: fall back to a snapshot copy.
       return this.openSnapshot(err);
     }
   }
 
-  private openSnapshot(cause: unknown): Database.Database {
+  private openSnapshot(cause: unknown): DatabaseSync {
     const snapDir = join(tmpdir(), "burn-brief-snap");
     mkdirSync(snapDir, { recursive: true });
     const snap = join(snapDir, "ChatStorage.sqlite");
@@ -60,7 +62,7 @@ export class MacSqliteSource implements Source {
       for (const ext of ["-wal", "-shm"]) {
         if (existsSync(this.dbPath + ext)) copyFileSync(this.dbPath + ext, snap + ext);
       }
-      return new Database(snap, { readonly: true, fileMustExist: true });
+      return new DatabaseSync(snap, { readOnly: true });
     } catch {
       throw new Error(
         `Cannot open WhatsApp database at ${this.dbPath}. ` +

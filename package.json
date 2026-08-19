@@ -14,10 +14,12 @@
     "start": "npm run build && electron .",
     "demo:data": "npm run build && node scripts/create-demo.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
-    "release:check": "npm run check && npm test && npm run build && node --check electron/main.js && node --check electron/preload.cjs"
+    "release:check": "npm run check && npm test && npm run build && node --check electron/main.js && node --check electron/preload.cjs",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "release:mac": "npm run dist:mac && xcrun notarytool submit release/*.dmg --keychain-profile burn-brief --wait && xcrun stapler staple release/*.dmg"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "license": "MIT",
   "repository": {
@@ -28,13 +30,10 @@
   "bugs": {
     "url": "https://github.com/jameslbarnes/burn-brief/issues"
   },
-  "dependencies": {
-    "better-sqlite3": "^13.0.3"
-  },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
     "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   },

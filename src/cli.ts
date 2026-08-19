@@ -248,7 +248,7 @@ async function main(): Promise<void> {
       const upd = store.db.prepare(
         `UPDATE messages SET priority = ?, signals = ?, llm_status = 'pending' WHERE id = ?`,
       );
-      const tx = store.db.transaction(() => {
+      store.transaction(() => {
         for (const r of rows) {
           const pf = prefilter(
             {
@@ -266,7 +266,6 @@ async function main(): Promise<void> {
           );
         }
       });
-      tx();
       const pending = (store.db
         .prepare(`SELECT COUNT(*) AS n FROM messages WHERE llm_status='pending'`)
         .get() as { n: number }).n;
@@ -432,9 +431,9 @@ end tell`;
         }
         let verified: boolean | null = null;
         try {
-          const { default: DatabaseCtor } = await import("better-sqlite3");
+          const { DatabaseSync } = await import("node:sqlite");
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          const messagesDb = new DatabaseCtor(join(homedir(), "Library/Messages/chat.db"), { readonly: true, fileMustExist: true });
+          const messagesDb = new DatabaseSync(join(homedir(), "Library/Messages/chat.db"), { readOnly: true });
           const probe = body.slice(0, 20).replace(/'/g, "''");
           const row = messagesDb
             .prepare(
@@ -517,7 +516,7 @@ end tell`;
         .prepare(`SELECT * FROM messages WHERE llm_status = 'pending'`)
         .all() as StoredMessage[];
       const upd = store.db.prepare(`UPDATE messages SET priority = ?, signals = ? WHERE id = ?`);
-      const tx = store.db.transaction(() => {
+      store.transaction(() => {
         for (const r of rows) {
           const pf = prefilter(
             {
@@ -530,7 +529,6 @@ end tell`;
           upd.run(pf.priority, JSON.stringify(pf.signals), r.id);
         }
       });
-      tx();
       console.log(`reprioritized ${rows.length} pending messages against ${goals.length} active goal(s)`);
       store.close();
       break;

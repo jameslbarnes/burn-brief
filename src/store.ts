@@ -2,7 +2,7 @@
 // New installs live at ~/.burn-brief/app.db. Existing installs keep using the
 // legacy directory automatically so the product rename never loses local data.
 
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -116,13 +116,25 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 `;
 
 export class Store {
-  readonly db: Database.Database;
+  readonly db: DatabaseSync;
 
   constructor(dir: string = appHome()) {
     mkdirSync(dir, { recursive: true });
-    this.db = new Database(join(dir, "app.db"));
-    this.db.pragma("journal_mode = WAL");
+    this.db = new DatabaseSync(join(dir, "app.db"));
+    this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec(SCHEMA);
+  }
+
+  transaction<T>(fn: () => T): T {
+    this.db.exec("BEGIN");
+    try {
+      const result = fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   // --- watermarks -----------------------------------------------------------
@@ -155,7 +167,7 @@ export class Store {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     let n = 0;
-    const insertAll = this.db.transaction(() => {
+    this.transaction(() => {
       for (const m of msgs) {
         const hash = m.text ? createHash("sha256").update(m.text).digest("hex").slice(0, 16) : null;
         const llmStatus = m.text && !m.isFromMe ? "pending" : "skipped";
@@ -164,10 +176,9 @@ export class Store {
           m.senderName, m.isFromMe ? 1 : 0, m.ts, m.text, m.msgType, hash,
           m.priority, JSON.stringify(m.signals), llmStatus,
         );
-        n += r.changes;
+        n += Number(r.changes);
       }
     });
-    insertAll();
     return n;
   }
 
@@ -192,8 +203,7 @@ export class Store {
 
   markClassified(ids: string[]): void {
     const stmt = this.db.prepare(`UPDATE messages SET llm_status = 'classified' WHERE id = ?`);
-    const tx = this.db.transaction(() => ids.forEach((id) => stmt.run(id)));
-    tx();
+    this.transaction(() => ids.forEach((id) => stmt.run(id)));
   }
 
   messageCount(): { total: number; pending: number } {
@@ -274,7 +284,7 @@ export class Store {
     excludeDismissed?: boolean; sinceTs?: number; untilTs?: number;
   } = {}): Item[] {
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: (string | number)[] = [];
     if (opts.type) { where.push("type = ?"); params.push(opts.type); }
     if (opts.status) { where.push("status = ?"); params.push(opts.status); }
     if (opts.excludeDismissed) where.push("status != 'dismissed'");
@@ -350,9 +360,11 @@ export class Store {
 
   /** Retire loops the brief hasn't surfaced in a while — zombies bloat the prompt. */
   expireStaleLoops(beforeDay: string): number {
-    return this.db
-      .prepare(`UPDATE loops SET status = 'expired', closed_at = ? WHERE status = 'open' AND last_day < ?`)
-      .run(Math.floor(Date.now() / 1000), beforeDay).changes;
+    return Number(
+      this.db
+        .prepare(`UPDATE loops SET status = 'expired', closed_at = ? WHERE status = 'open' AND last_day < ?`)
+        .run(Math.floor(Date.now() / 1000), beforeDay).changes,
+    );
   }
 
   // --- llm cache / prompt log ----------------------------------------------
@@ -533,7 +545,7 @@ export class Store {
   }
 }
 
-export interface StoredLoop {
+export type StoredLoop = {
   id: number;
   title: string;
   why: string | null;
@@ -542,9 +554,9 @@ export interface StoredLoop {
   last_day: string;
   closed_at: number | null;
   evidence: string | null;
-}
+};
 
-export interface StoredMessage {
+export type StoredMessage = {
   id: string;
   source_id: string;
   cursor: number;
@@ -560,14 +572,14 @@ export interface StoredMessage {
   priority: number;
   signals: string | null;
   llm_status: string;
-}
+};
 
-interface ItemRow {
+type ItemRow = {
   id: number; type: ItemType; title: string; summary: string; confidence: number;
   score: number; goal_id: number | null; chat_jid: string; chat_name: string;
   source_msg_ids: string; fields: string; dedupe_key: string | null;
   status: ItemStatus; created_at: number;
-}
+};
 
 function rowToItem(r: ItemRow): Item {
   return {
