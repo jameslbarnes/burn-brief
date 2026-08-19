@@ -102,6 +102,17 @@ async function main(): Promise<void> {
       break;
     }
 
+    case "consent": {
+      // First-run consent gate: the desktop app reads and classifies nothing
+      // until this is granted once. `consent` shows, `consent grant` records.
+      const store = new Store();
+      if (args[0] === "grant") store.grantConsent();
+      const at = store.getConsentAt();
+      console.log(JSON.stringify({ granted: at != null, at }));
+      store.close();
+      break;
+    }
+
     case "backend": {
       const sub = args[0] ?? "show";
       const store = new Store();

@@ -835,6 +835,31 @@
     nav#side { position: sticky; bottom: 0; z-index: 8; grid-template-columns: repeat(3, 1fr); height: auto; }
     #side button { min-height: 45px; }
   }
+  /* ---- first-run consent ---------------------------------------------------
+     A full porcelain sheet over everything. Nothing behind it runs until the
+     reader chooses; the copy is the privacy policy in plain words. */
+  #consent {
+    position: fixed; inset: 0; z-index: 100;
+    background: var(--bg);
+    overflow-y: auto;
+    display: grid; place-items: safe center;
+  }
+  .consent-inner {
+    max-width: 600px; padding: 64px 36px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .consent-inner h1 {
+    font-family: var(--display); font-weight: 400;
+    font-size: 34px; line-height: 1.15; margin: 6px 0 2px;
+  }
+  .consent-inner .consent-rule { border-top: 1px solid var(--hairline-2); }
+  .consent-inner p {
+    font-family: var(--serif); font-size: 15px; line-height: 1.55;
+    color: var(--ink-2); margin: 0;
+  }
+  .consent-inner p strong { color: var(--ink); font-family: var(--sans); font-size: 14px; }
+  .consent-actions { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
+  .consent-actions button.primary { padding: 10px 22px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -1882,7 +1907,56 @@
     if (nav !== "settings") await render();
   });
 
-  (async () => {
+  // ---- first-run consent ----------------------------------------------------
+
+  function showConsentScreen(onGranted) {
+    const sheet = el(`<div id="consent">
+      <div class="consent-inner">
+        <span class="micro"><b>burn/brief</b> · before your first briefing</span>
+        <h1>This app reads your WhatsApp groups. Here is exactly what that means.</h1>
+        <div class="consent-rule"></div>
+        <p><strong>It reads, never writes.</strong><br>
+          burn/brief opens the WhatsApp message database already on this Mac,
+          read-only. It never sends, posts or replies to anything — on WhatsApp
+          or anywhere else.</p>
+        <p><strong>Analysis runs through your own AI account.</strong><br>
+          To find what needs you, relevant message text is sent to Anthropic or
+          OpenAI through the Claude Code or Codex CLI you are signed into — the
+          same as pasting a chat there yourself. There is no burn/brief server,
+          account or analytics.</p>
+        <p><strong>Everything else stays on this Mac.</strong><br>
+          Briefings, tasks and settings live in a local folder. The only other
+          network request is the public Black Rock City weather forecast, which
+          contains nothing about you.</p>
+        <p><strong>Your groups are other people's words.</strong><br>
+          Consider telling your camp you use a briefing tool. Transparency is
+          good playa etiquette.</p>
+        <div class="consent-rule"></div>
+        <div class="consent-actions">
+          <button class="primary" id="consentGrant">Start reading my chats</button>
+          <button class="ghost" id="consentPrivacy">Read the full privacy note</button>
+        </div>
+        <span class="micro">Nothing is read or sent until you choose.</span>
+      </div>
+    </div>`);
+    sheet.querySelector("#consentPrivacy").onclick = () =>
+      window.burnBrief.openUrl("https://github.com/jameslbarnes/burn-brief/blob/main/PRIVACY.md");
+    sheet.querySelector("#consentGrant").onclick = async () => {
+      const btn = sheet.querySelector("#consentGrant");
+      btn.disabled = true;
+      btn.textContent = "Starting…";
+      const c = await window.burnBrief.consentGrant().catch(() => null);
+      if (!c || !c.granted) { btn.disabled = false; btn.textContent = "Start reading my chats"; return; }
+      sheet.remove();
+      // Land new readers on Settings so the brief knows who they are.
+      onboarding = true;
+      nav = "settings";
+      onGranted();
+    };
+    document.body.appendChild(sheet);
+  }
+
+  async function boot() {
     if (window.burnBrief.backdrop) {
       window.burnBrief.backdrop().then((u) => {
         if (u) {
@@ -1897,6 +1971,14 @@
     setInterval(refreshBrcWeather, 15 * 60 * 1000);
     await render();
     await refreshLastRun();
+  }
+
+  (async () => {
+    const consent = window.burnBrief.consent
+      ? await window.burnBrief.consent().catch(() => null)
+      : { granted: true };
+    if (consent && consent.granted) await boot();
+    else showConsentScreen(boot);
   })();
 </script>
 </body>

@@ -366,10 +366,28 @@ app.whenReady().then(() => {
   ipcMain.handle("burnbrief:runNow", () => runTick(true));
   ipcMain.handle("burnbrief:lastRun", () => lastRun);
 
+  // First-run consent gate: no ingestion or classification runs until the
+  // user has accepted the consent screen once. The flag lives in the store,
+  // so it survives reinstalls of the app but not a data reset.
+  ipcMain.handle("burnbrief:consent", () => engine(["consent"]));
+  ipcMain.handle("burnbrief:consentGrant", async () => {
+    const c = await engine(["consent", "grant"]);
+    if (c?.granted) startScheduler(true);
+    return c;
+  });
+  engine(["consent"])
+    .then((c) => { if (c?.granted) startScheduler(false); })
+    .catch(() => { /* renderer will show the consent screen */ });
+});
+
+let schedulerStarted = false;
+function startScheduler(classifyNow) {
+  if (schedulerStarted) return;
+  schedulerStarted = true;
   setInterval(() => runTick(false), INGEST_EVERY_MS);
   setInterval(() => runTick(true), CLASSIFY_EVERY_MS);
-  runTick(false);
-});
+  runTick(classifyNow);
+}
 
 app.on("before-quit", () => { quitting = true; });
 app.on("window-all-closed", () => { /* stay resident in the tray */ });

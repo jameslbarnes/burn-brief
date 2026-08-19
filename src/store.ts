@@ -456,6 +456,18 @@ export class Store {
     if (f.keywords !== undefined) this.metaSet("focus_keywords", JSON.stringify(f.keywords));
   }
 
+  /** First-run consent: unix seconds when granted, or null. */
+  getConsentAt(): number | null {
+    const v = this.metaGet("consent_granted_at");
+    return v ? Number(v) : null;
+  }
+
+  grantConsent(): void {
+    if (!this.metaGet("consent_granted_at")) {
+      this.metaSet("consent_granted_at", String(Math.floor(Date.now() / 1000)));
+    }
+  }
+
   getBackendPreference(): BackendPreference {
     const value = this.metaGet("agent_backend");
     return value === "claude" || value === "codex" ? value : "auto";

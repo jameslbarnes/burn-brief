@@ -1,7 +1,8 @@
 # burn/brief privacy and data flow
 
 burn/brief is local-first, not offline-only. This document says exactly where
-data goes.
+data goes. The desktop app states the same in plain language on first launch
+and reads nothing until you accept that screen.
 
 ## Data read from your Mac
 
