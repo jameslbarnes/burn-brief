@@ -17,16 +17,22 @@ const INFER_SCHEMA = {
       type: "array", items: { type: "string" }, maxItems: 5,
       description: "Things you guessed at or couldn't tell, phrased as short prompts the user can answer by editing ('I guessed you work in tech — correct?')",
     },
+    goals: {
+      type: "array", items: { type: "string" }, maxItems: 3,
+      description: "Up to 3 concrete, currently-active goals evidenced by what the user is ASKING FOR or ARRANGING in recent messages (e.g. 'Find a ride from Reno around Aug 28', 'Sell my extra ticket at face'). First person, one sentence each, specific enough to match chat messages against. Empty if nothing is clearly live.",
+    },
   },
-  required: ["profile", "uncertainties"],
+  required: ["profile", "uncertainties", "goals"],
   additionalProperties: false,
 };
 
-const INFER_SYSTEM = `You draft a self-profile for the user of a WhatsApp-group assistant app, inferred from their own data. The profile becomes the relevance lens for everything the app surfaces, and the user will review and edit it before saving — so write it in their voice, first person, and keep every claim grounded in the evidence. Weight what they SAY and where they're ACTIVE over mere group membership (people lurk in groups they don't care about). Note recurring themes: place names they mention, what they organize or offer, what they ask for, communities they participate in. Do not moralize, flatter, or pad.`;
+const INFER_SYSTEM = `You draft a self-profile for the user of a WhatsApp-group assistant app, inferred from their own data. The profile becomes the relevance lens for everything the app surfaces, and the user will review and edit it before saving — so write it in their voice, first person, and keep every claim grounded in the evidence. Weight what they SAY and where they're ACTIVE over mere group membership (people lurk in groups they don't care about). Note recurring themes: place names they mention, what they organize or offer, what they ask for, communities they participate in. Do not moralize, flatter, or pad.
+Alongside the profile, propose goals ONLY for needs the user is visibly still pursuing in recent messages — an unanswered ask, an open search, an offer still standing. A resolved thread is not a goal.`;
 
 export interface InferredProfile {
   profile: string;
   uncertainties: string[];
+  goals: string[];
 }
 
 export async function inferProfile(

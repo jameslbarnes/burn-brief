@@ -5,7 +5,7 @@
 
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, shell, Tray } from "electron";
 import updaterPkg from "electron-updater";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 
 const { autoUpdater } = updaterPkg;
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -158,6 +158,41 @@ function engine(args, { timeoutMs = 600_000 } = {}) {
         try { resolve(JSON.parse(line)); } catch (e) { reject(e); }
       },
     );
+  });
+}
+
+// Like engine(), but forwards NDJSON progress lines from the child's stderr
+// as they arrive (the CLI's --progress protocol). stdout stays the result.
+function engineStream(args, { timeoutMs = 600_000, onEvent } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [CLI, ...args, "--json"],
+      { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
+    );
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`engine ${args[0]}: timed out`)); }, timeoutMs);
+    let out = "";
+    let errBuf = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => {
+      errBuf += d;
+      let nl;
+      while ((nl = errBuf.indexOf("\n")) >= 0) {
+        const line = errBuf.slice(0, nl).trim();
+        errBuf = errBuf.slice(nl + 1);
+        if (line.startsWith("{")) {
+          try { onEvent?.(JSON.parse(line)); } catch { /* plain stderr noise */ }
+        }
+      }
+    });
+    child.on("error", (err) => { clearTimeout(timer); reject(err); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) return reject(new Error(`engine ${args[0]}: exit ${code}\n${errBuf.slice(0, 500)}`));
+      const line = String(out).split("\n").find((l) => l.trimStart().startsWith("{") || l.trimStart().startsWith("["));
+      if (!line) return resolve(null);
+      try { resolve(JSON.parse(line)); } catch (err) { reject(err); }
+    });
   });
 }
 
@@ -426,11 +461,22 @@ async function firstRunSequence() {
   try {
     phase("reading");
     const boot = await engine(["bootstrap"], { timeoutMs: 600_000 });
-    phase("profile", { messages: boot?.scanned, groups: boot?.groups });
-    const prof = await engine(["profile", "infer", "--apply"], { timeoutMs: 420_000 });
-    phase("classify", { profile: prof?.profile });
-    const run = await engine(["run", "--max-batches", "5", "--min-priority", "0"]);
-    phase("digest", { items: run?.classify?.itemsCreated });
+    phase("working", { messages: boot?.scanned, groups: boot?.groups });
+    // Bio+goal inference and classification are independent — run them
+    // concurrently, streaming per-batch classification progress to the sheet.
+    const profP = engine(["profile", "infer", "--apply"], { timeoutMs: 420_000 })
+      .then((prof) => { phase("bio-done", { profile: prof?.profile, goals: prof?.goalsAdded }); return prof; });
+    // Generous timeout: slow batches once blew the default 10 minutes and
+    // killed the whole first run. Progress events prove liveness now.
+    const runP = engineStream(["run", "--max-batches", "5", "--min-priority", "0", "--progress"], {
+      timeoutMs: 1_800_000,
+      onEvent: (ev) => { if (ev.progress === "classify") phase("classify-progress", ev); },
+    }).then((run) => { phase("classify-done", { items: run?.classify?.itemsCreated }); return run; });
+    // Classification is load-bearing; a failed bio inference just means no
+    // reveal and the sheet moves on.
+    const [, runR] = await Promise.allSettled([profP, runP]);
+    if (runR.status === "rejected") throw runR.reason;
+    phase("digest");
     const digest = await engine(["digest", "run"], { timeoutMs: 300_000 });
     phase("done", { headline: digest?.headline });
   } catch (err) {

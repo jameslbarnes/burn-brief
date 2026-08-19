@@ -404,8 +404,22 @@ async function main(): Promise<void> {
         const { inferProfile } = await import("./infer.js");
         const backend = await configuredBackend(store, args);
         const draft = await inferProfile(backend, store);
-        if (args.includes("--apply")) store.setProfile(draft.profile);
-        if (args.includes("--json")) console.log(JSON.stringify({ ...draft, applied: args.includes("--apply") }));
+        let goalsAdded: string[] = [];
+        if (args.includes("--apply")) {
+          store.setProfile(draft.profile);
+          // Seed inferred goals only into an empty goal list, so re-running
+          // inference never duplicates or overrides what the user curated.
+          if ((draft.goals?.length ?? 0) > 0 && store.goals().length === 0) {
+            goalsAdded = draft.goals.slice(0, 3);
+            await Promise.all(goalsAdded.map(async (desc) => {
+              const id = store.addGoal(desc);
+              // An uncompiled goal still classifies via its description; a
+              // compile failure just loses the keyword pre-filter boost.
+              await compileGoal(backend, store, id, desc).catch(() => {});
+            }));
+          }
+        }
+        if (args.includes("--json")) console.log(JSON.stringify({ ...draft, goalsAdded, applied: args.includes("--apply") }));
         else {
           console.log(draft.profile);
           if (draft.uncertainties.length > 0) {
@@ -617,6 +631,12 @@ end tell`;
       const classifyStats = await classifyPending(backend, store, {
         maxBatches: Number(flag(args, "max-batches") ?? 5),
         minPriority: Number(flag(args, "min-priority") ?? 1),
+        concurrency: Number(flag(args, "concurrency") ?? 3),
+        // --progress: NDJSON on stderr, one event per finished batch; stdout
+        // stays reserved for the final JSON result.
+        onProgress: args.includes("--progress")
+          ? (ev) => console.error(JSON.stringify({ progress: "classify", ...ev }))
+          : undefined,
       });
       // Retire stale low-priority backlog so pending can't grow unbounded;
       // 7 days is well past any digest/notification window.

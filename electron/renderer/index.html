@@ -919,6 +919,20 @@
     mask-image: linear-gradient(#000 65%, transparent);
   }
   .fr-bio .fr-bio-hint { font-size: 11px; color: var(--ink-3); }
+  .fr-bar { display: block; height: 2px; background: var(--hairline); margin: 9px 0 7px; }
+  .fr-bar-fill { display: block; height: 100%; width: 0%; background: var(--act); transition: width .6s ease; }
+  .fr-count { display: block; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-3); }
+  .fr-finds { display: block; margin-top: 6px; }
+  .fr-find {
+    display: block; font-family: var(--sans); font-size: 12.5px; color: var(--ink-2);
+    padding: 1px 0; animation: fr-reveal .5s ease;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52ch;
+  }
+  .fr-goal-list { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; }
+  .fr-goal { font-family: var(--sans); font-size: 13px; color: var(--ink-2); animation: fr-reveal .6s ease; }
+  .fr-goal::before { content: "◦ "; color: var(--act); }
+  .fr-error { color: var(--due); }
+  .fr-error:empty { display: none; }
   @keyframes fr-reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   #firstrun h1 { transition: opacity .3s; }
 
@@ -2013,7 +2027,8 @@
   window.burnBrief.onFirstRun?.(async (d) => {
     firstRunPhase = d.phase === "done" || d.phase === "error" ? null : d.phase;
     updateFirstRunSheet(d);
-    if (nav !== "settings") await render();
+    // While the sheet narrates, don't re-render the app behind it per event.
+    if (!firstRunSheet && nav !== "settings") await render();
     await refreshLastRun();
   });
 
@@ -2074,14 +2089,13 @@
   let firstRunSheet = null;
   const FR_STAGES = [
     ["reading", "Reading your groups"],
-    ["profile", "Writing your bio"],
+    ["profile", "Writing your bio & goals"],
     ["classify", "Finding what needs you"],
     ["digest", "Drafting your first edition"],
   ];
   const FR_HEADLINES = {
     reading: "Reading your groups.",
-    profile: "Getting to know you.",
-    classify: "Finding what needs you.",
+    working: "Getting to know you.",
     digest: "Drafting your first edition.",
     done: "Your first edition is ready.",
     error: "The first read hit a snag.",
@@ -2108,6 +2122,7 @@
         <div class="sheet-actions" hidden>
           <button class="primary" id="frDone">Read your first edition</button>
         </div>
+        <span class="micro fr-error"></span>
         <span class="micro"><a class="credit-link" href="https://oneguild.nyc">A playa gift from oneguild.nyc</a></span>
       </div>
     </div>`);
@@ -2129,30 +2144,78 @@
   function updateFirstRunSheet(d) {
     if (!firstRunSheet) return;
     const det = d.detail || {};
-    const idx = FR_STAGES.findIndex(([id]) => id === d.phase);
-    FR_STAGES.forEach(([id], i) => {
-      const st = firstRunSheet.querySelector(`[data-stage="${id}"]`);
-      st.classList.toggle("done", d.phase === "done" || (idx >= 0 && i < idx));
-      st.classList.toggle("active", id === d.phase);
-    });
-    const h = firstRunSheet.querySelector("#frHeadline");
-    if (FR_HEADLINES[d.phase]) h.textContent = FR_HEADLINES[d.phase];
+    const mark = (stage, state) => {
+      const st = firstRunSheet.querySelector(`[data-stage="${stage}"]`);
+      st.classList.toggle("active", state === "active");
+      st.classList.toggle("done", state === "done");
+    };
     const detail = (stage, text) => {
       firstRunSheet.querySelector(`[data-stage="${stage}"] .fr-detail`).textContent = text;
     };
-    if (d.phase === "profile" && det.messages) {
-      detail("reading", `${Number(det.messages).toLocaleString()} messages${det.groups ? ` across ${Number(det.groups).toLocaleString()} group chats` : ""}, read right here on your Mac`);
+    const h = firstRunSheet.querySelector("#frHeadline");
+    if (FR_HEADLINES[d.phase]) h.textContent = FR_HEADLINES[d.phase];
+
+    if (d.phase === "reading") mark("reading", "active");
+    if (d.phase === "working") {
+      // Bio inference and classification run concurrently from here.
+      mark("reading", "done");
+      mark("profile", "active");
+      mark("classify", "active");
+      if (det.messages) {
+        detail("reading", `${Number(det.messages).toLocaleString()} messages${det.groups ? ` across ${Number(det.groups).toLocaleString()} group chats` : ""}, read right here on your Mac`);
+      }
     }
-    if (d.phase === "classify" && det.profile) {
-      detail("profile", "drafted — it's below");
-      const bio = firstRunSheet.querySelector(".fr-bio");
-      bio.hidden = false;
-      bio.querySelector(".fr-bio-text").textContent = det.profile;
+    if (d.phase === "classify-progress") {
+      const holder = firstRunSheet.querySelector(`[data-stage="classify"] .fr-detail`);
+      if (!holder.querySelector(".fr-bar")) {
+        holder.innerHTML = `<span class="fr-bar"><span class="fr-bar-fill"></span></span><span class="fr-count"></span><span class="fr-finds"></span>`;
+      }
+      const pct = det.messagesTotal ? Math.round((det.messagesDone / det.messagesTotal) * 100) : 0;
+      holder.querySelector(".fr-bar-fill").style.width = pct + "%";
+      holder.querySelector(".fr-count").textContent =
+        `${Number(det.messagesDone).toLocaleString()} of ${Number(det.messagesTotal).toLocaleString()} recent messages weighed · ${det.itemsCreated} found`;
+      const finds = holder.querySelector(".fr-finds");
+      for (const t of det.titles || []) {
+        const row = el(`<span class="fr-find"></span>`);
+        row.textContent = "→ " + t;
+        finds.prepend(row);
+      }
+      while (finds.children.length > 3) finds.lastChild.remove();
     }
-    if (d.phase === "digest" && det.items != null) {
-      detail("classify", `${det.items} ${det.items === 1 ? "thing" : "things"} that need you, pulled from the noise`);
+    if (d.phase === "bio-done") {
+      mark("profile", "done");
+      if (det.profile) {
+        const bio = firstRunSheet.querySelector(".fr-bio");
+        bio.hidden = false;
+        bio.querySelector(".fr-bio-text").textContent = det.profile;
+        if (det.goals && det.goals.length) {
+          const list = el(`<div class="fr-goal-list"><span class="micro">Goals it will chase for you</span></div>`);
+          for (const g of det.goals) {
+            const row = el(`<span class="fr-goal"></span>`);
+            row.textContent = g;
+            list.appendChild(row);
+          }
+          bio.appendChild(list);
+        }
+      }
+    }
+    if (d.phase === "classify-done") {
+      mark("classify", "done");
+      const fill = firstRunSheet.querySelector(`[data-stage="classify"] .fr-bar-fill`);
+      if (fill) fill.style.width = "100%";
+      if (det.items != null) {
+        const count = firstRunSheet.querySelector(`[data-stage="classify"] .fr-count`);
+        const text = `${det.items} ${det.items === 1 ? "thing" : "things"} that need you, pulled from the noise`;
+        if (count) count.textContent = text;
+        else detail("classify", text);
+      }
+    }
+    if (d.phase === "digest") {
+      mark("reading", "done"); mark("profile", "done"); mark("classify", "done");
+      mark("digest", "active");
     }
     if (d.phase === "done") {
+      for (const [id] of FR_STAGES) mark(id, "done");
       if (det.headline) detail("digest", `“${det.headline}”`);
       firstRunSheet.querySelector(".sheet-actions").hidden = false;
     }
@@ -2160,6 +2223,10 @@
       const acts = firstRunSheet.querySelector(".sheet-actions");
       acts.hidden = false;
       acts.querySelector("#frDone").textContent = "Continue to the app";
+      if (det.detail) {
+        firstRunSheet.querySelector(".fr-error").textContent =
+          `What went wrong: ${det.detail} — the app keeps retrying on its own.`;
+      }
     }
   }
 

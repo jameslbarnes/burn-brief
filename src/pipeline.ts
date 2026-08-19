@@ -56,14 +56,29 @@ export interface ClassifyStats {
   errors: number;
 }
 
+export interface ClassifyProgress {
+  messagesDone: number;
+  messagesTotal: number;
+  itemsCreated: number;
+  /** Titles of items created by the batch that just finished. */
+  titles: string[];
+}
+
 export async function classifyPending(
   backend: AgentBackend,
   store: Store,
-  opts: { maxBatches?: number; batchSize?: number; minPriority?: number } = {},
+  opts: {
+    maxBatches?: number; batchSize?: number; minPriority?: number;
+    /** Concurrent agent calls. Batches are disjoint, so order never matters;
+        this trades idle subscription time for wall-clock. */
+    concurrency?: number;
+    onProgress?: (ev: ClassifyProgress) => void;
+  } = {},
 ): Promise<ClassifyStats> {
   const batchSize = opts.batchSize ?? 50;
   const maxBatches = opts.maxBatches ?? 20;
   const minPriority = opts.minPriority ?? 0;
+  const concurrency = Math.max(1, opts.concurrency ?? 3);
   const identity = store.getIdentity();
   const goals = store.goals(true);
 
@@ -73,26 +88,43 @@ export async function classifyPending(
   const stats: ClassifyStats = {
     batches: 0, messages: 0, candidates: 0, itemsCreated: 0, merged: 0, costUsd: 0, errors: 0,
   };
+  const messagesTotal = batches.reduce((n, b) => n + b.length, 0);
+  let messagesDone = 0;
+  opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: 0, titles: [] });
 
-  for (const batch of batches) {
-    try {
-      const candidates = await classifyBatch(backend, store, batch, identity, goals);
-      stats.candidates += candidates.length;
-      for (const c of candidates) {
-        const created = storeCandidate(store, c, batch);
-        if (created === null) stats.merged += 1;
-        else stats.itemsCreated += 1;
+  let nextBatch = 0;
+  let lastErr: unknown = null;
+  const worker = async () => {
+    for (;;) {
+      // Three failures stop the run; anything unclassified stays pending
+      // and a later tick retries it.
+      if (stats.errors >= 3) return;
+      const i = nextBatch++;
+      if (i >= batches.length) return;
+      const batch = batches[i];
+      try {
+        const candidates = await classifyBatch(backend, store, batch, identity, goals);
+        stats.candidates += candidates.length;
+        const titles: string[] = [];
+        for (const c of candidates) {
+          const created = storeCandidate(store, c, batch);
+          if (created === null) stats.merged += 1;
+          else { stats.itemsCreated += 1; titles.push(c.title.slice(0, 100)); }
+        }
+        store.markClassified(batch.map((m) => m.id));
+        stats.batches += 1;
+        stats.messages += batch.length;
+        messagesDone += batch.length;
+        opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles });
+      } catch (err) {
+        stats.errors += 1;
+        lastErr = err;
+        console.error(`batch failed (${batch[0].chat_name}): ${String(err).slice(0, 300)}`);
       }
-      store.markClassified(batch.map((m) => m.id));
-      stats.batches += 1;
-      stats.messages += batch.length;
-    } catch (err) {
-      stats.errors += 1;
-      // Leave the batch pending; a later run retries it.
-      if (stats.errors >= 3) throw err;
-      console.error(`batch failed (${batch[0].chat_name}): ${String(err).slice(0, 300)}`);
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(batches.length, 1)) }, worker));
+  if (stats.errors >= 3 && lastErr) throw lastErr;
   return stats;
 }
 
