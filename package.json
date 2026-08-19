@@ -1,0 +1,42 @@
+{
+  "name": "burn-brief",
+  "productName": "burn/brief",
+  "version": "0.1.0",
+  "description": "A private, local-first briefing and action queue for your Burning Man WhatsApp groups",
+  "type": "module",
+  "bin": {
+    "burn-brief": "./bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "cli": "tsx src/cli.ts",
+    "start": "npm run build && electron .",
+    "demo:data": "npm run build && node scripts/create-demo.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "release:check": "npm run check && npm test && npm run build && node --check electron/main.js && node --check electron/preload.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jameslbarnes/burn-brief.git"
+  },
+  "homepage": "https://github.com/jameslbarnes/burn-brief#readme",
+  "bugs": {
+    "url": "https://github.com/jameslbarnes/burn-brief/issues"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.2.0",
+    "electron": "^43.4.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  },
+  "main": "electron/main.js"
+}
