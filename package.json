@@ -37,5 +37,8 @@
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   },
-  "main": "electron/main.js"
+  "main": "electron/main.js",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
 }

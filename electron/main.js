@@ -4,7 +4,10 @@
 // and Electron never loads native modules itself (no ABI rebuild needed).
 
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, shell, Tray } from "electron";
+import updaterPkg from "electron-updater";
 import { execFile } from "node:child_process";
+
+const { autoUpdater } = updaterPkg;
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -309,6 +312,7 @@ function exportIcs(item) {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  setupAutoUpdate();
   if (process.platform === "darwin") app.dock?.show();
 
   ipcMain.handle("burnbrief:status", () => engine(["status"]));
@@ -380,6 +384,24 @@ app.whenReady().then(() => {
     .then((c) => { if (c?.granted) startScheduler(false); })
     .catch(() => { /* renderer will show the consent screen */ });
 });
+
+// Auto-update from GitHub Releases. Updates download quietly; because the
+// app lives in the tray and is rarely quit, the ready notification offers a
+// one-click restart, and quitting the app any other way also installs.
+function setupAutoUpdate() {
+  if (!app.isPackaged) return;
+  autoUpdater.on("update-downloaded", (info) => {
+    const n = new Notification({
+      title: "burn/brief update ready",
+      body: `Version ${info.version} installs when you quit — or click here to restart into it now.`,
+    });
+    n.on("click", () => { quitting = true; autoUpdater.quitAndInstall(); });
+    n.show();
+  });
+  autoUpdater.on("error", () => { /* offline is normal; retry next interval */ });
+  autoUpdater.checkForUpdates().catch(() => {});
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 60 * 60_000);
+}
 
 let schedulerStarted = false;
 function startScheduler(classifyNow) {

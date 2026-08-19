@@ -20,8 +20,11 @@ npmRebuild: false
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns
+  # dmg is what people download; zip is what electron-updater installs from.
   target:
     - target: dmg
+      arch: [universal]
+    - target: zip
       arch: [universal]
   # Signs with the Developer ID Application certificate from the keychain.
   # Notarization credentials come from the keychain profile named by
@@ -38,3 +41,10 @@ mac:
 dmg:
   artifactName: "burn-brief-${version}.dmg"
   sign: true
+# Update feed: installed apps poll this repo's GitHub Releases. Publishing
+# stays manual (gh release create with the dmg, zip, blockmap and
+# latest-mac.yml from release/); this block is what embeds the feed URL.
+publish:
+  provider: github
+  owner: jameslbarnes
+  repo: burn-brief

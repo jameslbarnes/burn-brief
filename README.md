@@ -27,8 +27,12 @@ Node, no npm, no Xcode. Then:
    yourself.
 3. Have a logged-in [Claude Code](https://claude.com/claude-code) or
    [Codex](https://developers.openai.com/codex/cli/) CLI — that is the
-   subscription doing the reading. Set your name and goals in **Settings**
-   inside the app.
+   subscription doing the reading. If neither is installed, the app shows a
+   guided connect screen. Set your name and goals in **Settings** inside the
+   app.
+
+Once installed, the app keeps itself up to date from the Releases page —
+updates download in the background and install on quit or one click.
 
 ## Agent-guided installation
 
