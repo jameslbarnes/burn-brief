@@ -611,12 +611,14 @@
   header.flight-telemetry a { -webkit-app-region: no-drag; }
   .telemetry-grid {
     height: 100%; display: grid;
-    grid-template-columns: minmax(175px, 1.25fr) repeat(5, minmax(102px, 1fr)) minmax(128px, 1.1fr);
+    grid-template-columns: minmax(250px, 1.45fr) repeat(5, minmax(96px, 1fr)) minmax(128px, 1.1fr);
   }
   .flight-brand, .telemetry-cell {
     min-width: 0; padding: 0 18px; border-right: 1px solid var(--hairline);
     display: flex; flex-direction: column; justify-content: center;
   }
+  /* Clear the native macOS traffic lights overlaying the header's left edge. */
+  .flight-brand { padding-left: 92px; }
   .flight-brand strong {
     font-size: 17px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase;
   }
@@ -858,6 +860,7 @@
   }
   .sheet-inner p strong { color: var(--ink); font-family: var(--sans); font-size: 14px; }
   .sheet-actions { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
+  .sheet-actions[hidden], .fr-bio[hidden] { display: none; }
   .sheet-actions button.primary { padding: 10px 22px; font-size: 15px; }
   .sheet .opt { border-left: 2px solid var(--hairline-2); padding: 2px 0 4px 18px; }
   .sheet .opt p { margin-top: 6px; }
@@ -869,6 +872,67 @@
   .sheet .copy-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
   .sheet .copy-row button.ghost { font-size: 12px; }
   .sheet .check-note { min-height: 18px; }
+  /* The dusk horizon grounds every full-screen sheet. */
+  .sheet::after {
+    content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 38vh;
+    background: var(--backdrop-scene) bottom center / cover no-repeat;
+    opacity: .3; pointer-events: none;
+  }
+  .sheet-inner { position: relative; z-index: 1; }
+
+  /* ---- first-run sequence --------------------------------------------------- */
+  .fr-stages { display: flex; flex-direction: column; gap: 16px; margin: 4px 0; }
+  .fr-stage {
+    display: flex; gap: 16px; align-items: baseline;
+    opacity: .35; transition: opacity .5s ease;
+  }
+  .fr-stage.active, .fr-stage.done { opacity: 1; }
+  .fr-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex: none;
+    background: var(--hairline-2); position: relative; top: -1px;
+    transition: background .4s;
+  }
+  .fr-stage.active .fr-dot { background: var(--act); animation: gen-pulse 1.4s ease-in-out infinite; }
+  .fr-stage.done .fr-dot { background: var(--act); }
+  .fr-label { display: block; font-family: var(--sans); font-size: 14px; color: var(--ink); }
+  .fr-detail {
+    display: block; margin-top: 3px; font-family: var(--serif); font-style: italic;
+    font-size: 13.5px; line-height: 1.45; color: var(--ink-3);
+  }
+  .fr-detail:empty { display: none; }
+  .fr-bio { border-left: 2px solid var(--act); padding: 4px 0 6px 18px; animation: fr-reveal .8s ease; }
+  .fr-bio p {
+    margin: 8px 0 6px; font-family: var(--serif); font-size: 14.5px; line-height: 1.55;
+    color: var(--ink-2); max-height: 132px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(#000 65%, transparent);
+    mask-image: linear-gradient(#000 65%, transparent);
+  }
+  .fr-bio .fr-bio-hint { font-size: 11px; color: var(--ink-3); }
+  @keyframes fr-reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  #firstrun h1 { transition: opacity .3s; }
+
+  /* ---- first-edition generating indicator & credit ------------------------- */
+  .generating { display: flex; align-items: center; gap: 12px; padding: 26px 0 10px; }
+  .generating .gen-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--act);
+    animation: gen-pulse 1.4s ease-in-out infinite;
+  }
+  .generating .gen-text {
+    font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink-2);
+  }
+  @keyframes gen-pulse {
+    0%, 100% { opacity: .25; transform: scale(.8); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  .playa-credit {
+    margin: 44px 0 30px; padding-top: 16px;
+    border-top: 1px solid var(--hairline); text-align: center;
+  }
+  .playa-credit a, a.credit-link {
+    font-family: var(--sans); font-size: 9px; font-weight: 600; letter-spacing: .28em;
+    text-transform: uppercase; color: var(--ink-3); text-decoration: none;
+  }
+  .playa-credit a:hover, a.credit-link:hover { color: var(--act); }
 </style>
 </head>
 <body>
@@ -1234,6 +1298,7 @@
     else dayNav.querySelector(".day-today").onclick = () => { viewDay = null; render(); };
     article.appendChild(dayNav);
     article.appendChild(block);
+    article.appendChild(el(`<div class="playa-credit"><a href="https://oneguild.nyc">A playa gift from oneguild.nyc</a></div>`));
     root.appendChild(photo);
     root.appendChild(article);
   }
@@ -1628,6 +1693,12 @@
     if (!d) {
       const kicker = el(`<div class="briefing-kicker"><span class="micro"><b>Daily Briefing</b></span><span class="rule"></span></div>`);
       block.appendChild(kicker);
+      if (firstRunPhase) {
+        const gen = el(`<div class="generating"><span class="gen-dot"></span><span class="gen-text"></span></div>`);
+        gen.querySelector(".gen-text").textContent = FIRST_RUN_LABELS[firstRunPhase] ?? "Working on your first edition…";
+        block.appendChild(gen);
+        return block;
+      }
       const row = el(`<div class="no-briefing"><span class="quietline">No briefing yet today.</span></div>`);
       row.appendChild(btn);
       block.appendChild(row);
@@ -1916,6 +1987,21 @@
     if (nav !== "settings") await render();
   });
 
+  // First-run pipeline progress (consent → bio → classify → first edition).
+  let firstRunPhase = null;
+  const FIRST_RUN_LABELS = {
+    reading: "Reading your groups…",
+    profile: "Writing your bio from what your chats say…",
+    classify: "Finding what needs you…",
+    digest: "Drafting your first edition…",
+  };
+  window.burnBrief.onFirstRun?.(async (d) => {
+    firstRunPhase = d.phase === "done" || d.phase === "error" ? null : d.phase;
+    updateFirstRunSheet(d);
+    if (nav !== "settings") await render();
+    await refreshLastRun();
+  });
+
   // ---- first-run consent ----------------------------------------------------
 
   function showConsentScreen(onGranted) {
@@ -1946,6 +2032,7 @@
           <button class="ghost" id="consentPrivacy">Read the full privacy note</button>
         </div>
         <span class="micro">Nothing is read or sent until you choose.</span>
+        <span class="micro"><a class="credit-link" href="https://oneguild.nyc">A playa gift from oneguild.nyc</a></span>
       </div>
     </div>`);
     sheet.querySelector("#consentPrivacy").onclick = () =>
@@ -1957,12 +2044,111 @@
       const c = await window.burnBrief.consentGrant().catch(() => null);
       if (!c || !c.granted) { btn.disabled = false; btn.textContent = "Start reading my chats"; return; }
       sheet.remove();
-      // Land new readers on Settings so the brief knows who they are.
-      onboarding = true;
-      nav = "settings";
+      // The first edition and bio are already generating (main's
+      // firstRunSequence); the narrated sheet carries the wait.
+      firstRunPhase = "reading";
+      nav = "today";
+      showFirstRunSheet();
       onGranted();
     };
     document.body.appendChild(sheet);
+  }
+
+  // ---- first-run sequence ----------------------------------------------------
+  // A full-screen narrated build of the first edition. Each phase event from
+  // the main process advances the stages, reveals the inferred bio, and ends
+  // on the edition headline with a single reveal button — never an empty page.
+
+  let firstRunSheet = null;
+  const FR_STAGES = [
+    ["reading", "Reading your groups"],
+    ["profile", "Writing your bio"],
+    ["classify", "Finding what needs you"],
+    ["digest", "Drafting your first edition"],
+  ];
+  const FR_HEADLINES = {
+    reading: "Reading your groups.",
+    profile: "Getting to know you.",
+    classify: "Finding what needs you.",
+    digest: "Drafting your first edition.",
+    done: "Your first edition is ready.",
+    error: "The first read hit a snag.",
+  };
+
+  function showFirstRunSheet() {
+    if (firstRunSheet) return;
+    const sheet = el(`<div class="sheet" id="firstrun">
+      <div class="sheet-inner">
+        <span class="micro"><b>burn/brief</b> · your first edition</span>
+        <h1 id="frHeadline">Reading your groups.</h1>
+        <div class="sheet-rule"></div>
+        <div class="fr-stages">
+          ${FR_STAGES.map(([id, label]) => `<div class="fr-stage" data-stage="${id}">
+            <span class="fr-dot"></span>
+            <div><span class="fr-label">${label}</span><span class="fr-detail"></span></div>
+          </div>`).join("")}
+        </div>
+        <div class="fr-bio" hidden>
+          <span class="micro">Your bio, as your chats tell it</span>
+          <p class="fr-bio-text"></p>
+          <span class="fr-bio-hint">Edit it anytime in Settings.</span>
+        </div>
+        <div class="sheet-actions" hidden>
+          <button class="primary" id="frDone">Read your first edition</button>
+        </div>
+        <span class="micro"><a class="credit-link" href="https://oneguild.nyc">A playa gift from oneguild.nyc</a></span>
+      </div>
+    </div>`);
+    sheet.querySelector("#frDone").onclick = async () => {
+      dismissFirstRunSheet();
+      nav = "today";
+      await render();
+    };
+    document.body.appendChild(sheet);
+    firstRunSheet = sheet;
+    updateFirstRunSheet({ phase: "reading" });
+  }
+
+  function dismissFirstRunSheet() {
+    firstRunSheet?.remove();
+    firstRunSheet = null;
+  }
+
+  function updateFirstRunSheet(d) {
+    if (!firstRunSheet) return;
+    const det = d.detail || {};
+    const idx = FR_STAGES.findIndex(([id]) => id === d.phase);
+    FR_STAGES.forEach(([id], i) => {
+      const st = firstRunSheet.querySelector(`[data-stage="${id}"]`);
+      st.classList.toggle("done", d.phase === "done" || (idx >= 0 && i < idx));
+      st.classList.toggle("active", id === d.phase);
+    });
+    const h = firstRunSheet.querySelector("#frHeadline");
+    if (FR_HEADLINES[d.phase]) h.textContent = FR_HEADLINES[d.phase];
+    const detail = (stage, text) => {
+      firstRunSheet.querySelector(`[data-stage="${stage}"] .fr-detail`).textContent = text;
+    };
+    if (d.phase === "profile" && det.messages) {
+      detail("reading", `${Number(det.messages).toLocaleString()} messages${det.groups ? ` across ${Number(det.groups).toLocaleString()} group chats` : ""}, read right here on your Mac`);
+    }
+    if (d.phase === "classify" && det.profile) {
+      detail("profile", "drafted — it's below");
+      const bio = firstRunSheet.querySelector(".fr-bio");
+      bio.hidden = false;
+      bio.querySelector(".fr-bio-text").textContent = det.profile;
+    }
+    if (d.phase === "digest" && det.items != null) {
+      detail("classify", `${det.items} ${det.items === 1 ? "thing" : "things"} that need you, pulled from the noise`);
+    }
+    if (d.phase === "done") {
+      if (det.headline) detail("digest", `“${det.headline}”`);
+      firstRunSheet.querySelector(".sheet-actions").hidden = false;
+    }
+    if (d.phase === "error") {
+      const acts = firstRunSheet.querySelector(".sheet-actions");
+      acts.hidden = false;
+      acts.querySelector("#frDone").textContent = "Continue to the app";
+    }
   }
 
   // ---- connect-an-AI ---------------------------------------------------------
@@ -2019,7 +2205,10 @@
         clearInterval(timer);
         sheet.remove();
         note.textContent = "";
-        window.burnBrief.runNow().catch(() => {});
+        firstRunPhase = "reading";
+        nav = "today";
+        showFirstRunSheet();
+        window.burnBrief.firstRun().catch(() => {});
         await render();
         return;
       }

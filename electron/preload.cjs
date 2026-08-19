@@ -28,5 +28,7 @@ contextBridge.exposeInMainWorld("burnBrief", {
   consent: () => ipcRenderer.invoke("burnbrief:consent"),
   backendShow: () => ipcRenderer.invoke("burnbrief:backendShow"),
   consentGrant: () => ipcRenderer.invoke("burnbrief:consentGrant"),
+  firstRun: () => ipcRenderer.invoke("burnbrief:firstRun"),
+  onFirstRun: (cb) => ipcRenderer.on("burnbrief:firstRun", (_e, data) => cb(data)),
   onRefreshed: (cb) => ipcRenderer.on("burnbrief:refreshed", (_e, data) => cb(data)),
 });

@@ -167,7 +167,10 @@ function createWindow() {
     height: 720,
     minWidth: 640,
     title: "burn/brief",
-    frame: false,
+    // Native traffic lights (close/minimize/zoom) without a title bar; the
+    // 64px telemetry header is the drag region and leaves room on its left.
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 18, y: 24 },
     backgroundColor: "#050d19",
     webPreferences: { preload: join(__dirname, "preload.cjs") },
   });
@@ -377,9 +380,12 @@ app.whenReady().then(() => {
   ipcMain.handle("burnbrief:backendShow", () => engine(["backend", "show"]));
   ipcMain.handle("burnbrief:consentGrant", async () => {
     const c = await engine(["consent", "grant"]);
-    if (c?.granted) startScheduler(true);
+    if (c?.granted) firstRunSequence();
     return c;
   });
+  // Re-entry point for the connect-an-AI screen: once a CLI login lands,
+  // the same first-run pipeline produces the bio and first edition.
+  ipcMain.handle("burnbrief:firstRun", () => { firstRunSequence(); return true; });
   engine(["consent"])
     .then((c) => { if (c?.granted) startScheduler(false); })
     .catch(() => { /* renderer will show the consent screen */ });
@@ -401,6 +407,34 @@ function setupAutoUpdate() {
   autoUpdater.on("error", () => { /* offline is normal; retry next interval */ });
   autoUpdater.checkForUpdates().catch(() => {});
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 60 * 60_000);
+}
+
+// First run after consent: read the groups, write the bio, classify, and
+// draft the first edition — reporting each phase so the Today tab can show
+// a generating indicator instead of an empty page. Any failure (most often
+// no agent CLI yet) falls back to the regular schedule; the connect screen
+// re-triggers this sequence when a login lands.
+let firstRunActive = false;
+async function firstRunSequence() {
+  if (firstRunActive) return;
+  firstRunActive = true;
+  const phase = (p, detail) => win?.webContents.send("burnbrief:firstRun", { phase: p, detail });
+  try {
+    phase("reading");
+    const boot = await engine(["bootstrap"], { timeoutMs: 600_000 });
+    phase("profile", { messages: boot?.scanned, groups: boot?.groups });
+    const prof = await engine(["profile", "infer", "--apply"], { timeoutMs: 420_000 });
+    phase("classify", { profile: prof?.profile });
+    const run = await engine(["run", "--max-batches", "5", "--min-priority", "0"]);
+    phase("digest", { items: run?.classify?.itemsCreated });
+    const digest = await engine(["digest", "run"], { timeoutMs: 300_000 });
+    phase("done", { headline: digest?.headline });
+  } catch (err) {
+    phase("error", String(err.message ?? err).slice(0, 200));
+  } finally {
+    firstRunActive = false;
+    startScheduler(false);
+  }
 }
 
 let schedulerStarted = false;

@@ -102,6 +102,33 @@ async function main(): Promise<void> {
       break;
     }
 
+    case "bootstrap": {
+      // First-run setup driven by the desktop app: init without aliases, and
+      // idempotent. Records identity from the source, ingests, and keeps the
+      // pre-install backlog out of the classification queue.
+      const backfillDays = Number(flag(args, "backfill-days") ?? 14);
+      const source = new MacSqliteSource();
+      const probe = source.probe();
+      if (!probe.ok) throw new Error(`source probe failed: ${probe.detail}`);
+      const store = new Store();
+      const firstIngest = store.getWatermark(source.id) === 0;
+      const jid = source.ownJid();
+      if (jid && !store.getIdentity().ownJid) store.setIdentity({ ownJid: jid });
+      const stats = ingest(source, store);
+      let skipped = 0;
+      if (firstIngest) {
+        const cutoff = Math.floor(Date.now() / 1000) - backfillDays * 86400;
+        skipped = Number(store.db
+          .prepare(`UPDATE messages SET llm_status='skipped' WHERE llm_status='pending' AND ts < ?`)
+          .run(cutoff).changes);
+      }
+      const groups = source.listGroupChats().length;
+      console.log(JSON.stringify({ ...stats, skipped, groups, ownJid: store.getIdentity().ownJid }));
+      source.close();
+      store.close();
+      break;
+    }
+
     case "consent": {
       // First-run consent gate: the desktop app reads and classifies nothing
       // until this is granted once. `consent` shows, `consent grant` records.
