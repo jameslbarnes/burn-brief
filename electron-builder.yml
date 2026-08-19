@@ -19,6 +19,9 @@ asar: false
 npmRebuild: false
 mac:
   category: public.app-category.productivity
+  # No spaces: GitHub rewrites spaces in release asset names, which would
+  # break the updater's manifest URLs. The dmg block below overrides for dmg.
+  artifactName: "burn-brief-${version}-${arch}-mac.${ext}"
   icon: build/icon.icns
   # dmg is what people download; zip is what electron-updater installs from.
   target:
