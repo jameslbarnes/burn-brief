@@ -100,23 +100,34 @@ export class ClaudeBackend implements AgentBackend {
     if (model) args.push("--model", model);
     if (req.system) args.push("--append-system-prompt", req.system);
 
-    const { stdout } = await run("claude", args, {
-      stdin: req.prompt,
-      timeoutMs: req.timeoutMs ?? 300_000,
-      cwd: agentCwd(),
-    });
-    const payload = parseClaudeJson(stdout);
-    if (payload.is_error) {
-      throw new Error(`claude returned an error: ${JSON.stringify(payload.result ?? payload).slice(0, 500)}`);
+    // The CLI occasionally emits corrupted stdout (trailing fragments,
+    // duplicated documents — observed in ~40% of benchmark invocations).
+    // Parse defensively and retry the whole call once before failing.
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { stdout } = await run("claude", args, {
+          stdin: req.prompt,
+          timeoutMs: req.timeoutMs ?? 300_000,
+          cwd: agentCwd(),
+        });
+        const payload = parseClaudeJson(stdout);
+        if (payload.is_error) {
+          throw new Error(`claude returned an error: ${JSON.stringify(payload.result ?? payload).slice(0, 500)}`);
+        }
+        const data = extractStructured<T>(payload);
+        return {
+          data,
+          costUsd: typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : undefined,
+          durationMs: Date.now() - started,
+          backend: this.id,
+          model,
+        };
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    const data = extractStructured<T>(payload);
-    return {
-      data,
-      costUsd: typeof payload.total_cost_usd === "number" ? payload.total_cost_usd : undefined,
-      durationMs: Date.now() - started,
-      backend: this.id,
-      model,
-    };
+    throw lastErr;
   }
 }
 
@@ -131,10 +142,15 @@ function parseClaudeJson(stdout: string): ClaudePayload {
   try {
     return JSON.parse(stdout) as ClaudePayload;
   } catch {
-    // Some CLI versions print warnings before the JSON; find the payload line.
-    const line = stdout.split("\n").find((l) => l.trimStart().startsWith("{"));
-    if (!line) throw new Error(`claude produced no JSON payload: ${stdout.slice(0, 500)}`);
-    return JSON.parse(line) as ClaudePayload;
+    // Corrupted stdout: warnings before the payload, or trailing fragments /
+    // duplicated documents after it. Take the FIRST parseable document line.
+    for (const line of stdout.split("\n")) {
+      if (!line.trimStart().startsWith("{")) continue;
+      try {
+        return JSON.parse(line) as ClaudePayload;
+      } catch { /* fragment — keep scanning */ }
+    }
+    throw new Error(`claude produced no parseable JSON payload: ${stdout.slice(0, 500)}`);
   }
 }
 

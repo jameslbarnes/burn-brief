@@ -62,7 +62,7 @@ async function main(): Promise<void> {
 
     case "init": {
       // First-time setup: capture identity, ingest history, skip old backlog.
-      const backfillDays = Number(flag(args, "backfill-days") ?? 14);
+      const backfillDays = Number(flag(args, "backfill-days") ?? 7);
       const aliases = flags(args, "alias");
       if (aliases.length === 0) throw new Error("init needs at least one --alias so burn/brief can recognize you in chats");
       const source = new MacSqliteSource();
@@ -124,8 +124,9 @@ async function main(): Promise<void> {
     case "bootstrap": {
       // First-run setup driven by the desktop app: init without aliases, and
       // idempotent. Records identity from the source, ingests, and keeps the
-      // pre-install backlog out of the classification queue.
-      const backfillDays = Number(flag(args, "backfill-days") ?? 14);
+      // pre-install backlog out of the classification queue. One week: the
+      // brief is about now, and a tighter window halves first-run quota burn.
+      const backfillDays = Number(flag(args, "backfill-days") ?? 7);
       const source = new MacSqliteSource();
       const probe = source.probe();
       if (!probe.ok) throw new Error(`source probe failed: ${probe.detail}`);

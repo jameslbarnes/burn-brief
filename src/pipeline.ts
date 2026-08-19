@@ -62,6 +62,8 @@ export interface ClassifyProgress {
   itemsCreated: number;
   /** Titles of items created by the batch that just finished. */
   titles: string[];
+  /** Batches currently in flight — lets the UI show life between completions. */
+  inFlight?: number;
 }
 
 export async function classifyPending(
@@ -93,15 +95,21 @@ export async function classifyPending(
   opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: 0, titles: [] });
 
   let nextBatch = 0;
+  let inFlight = 0;
   let lastErr: unknown = null;
+  const retryQueue: StoredMessage[][] = [];
+  const retried = new Set<StoredMessage[]>();
   const worker = async () => {
     for (;;) {
-      // Three failures stop the run; anything unclassified stays pending
-      // and a later tick retries it.
+      // Three hard failures stop the run; anything unclassified stays pending
+      // and a later tick retries it. Each batch gets one same-run requeue
+      // first, so a transient rate-limit burst degrades to slower, not dead.
       if (stats.errors >= 3) return;
       const i = nextBatch++;
-      if (i >= batches.length) return;
-      const batch = batches[i];
+      const batch = i < batches.length ? batches[i] : retryQueue.shift();
+      if (!batch) return;
+      inFlight += 1;
+      opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles: [], inFlight });
       try {
         const candidates = await classifyBatch(backend, store, batch, identity, goals);
         stats.candidates += candidates.length;
@@ -115,11 +123,19 @@ export async function classifyPending(
         stats.batches += 1;
         stats.messages += batch.length;
         messagesDone += batch.length;
-        opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles });
+        inFlight -= 1;
+        opts.onProgress?.({ messagesDone, messagesTotal, itemsCreated: stats.itemsCreated, titles, inFlight });
       } catch (err) {
-        stats.errors += 1;
-        lastErr = err;
-        console.error(`batch failed (${batch[0].chat_name}): ${String(err).slice(0, 300)}`);
+        inFlight -= 1;
+        if (!retried.has(batch)) {
+          retried.add(batch);
+          retryQueue.push(batch);
+          console.error(`batch failed, requeued (${batch[0].chat_name}): ${String(err).slice(0, 200)}`);
+        } else {
+          stats.errors += 1;
+          lastErr = err;
+          console.error(`batch failed twice (${batch[0].chat_name}): ${String(err).slice(0, 300)}`);
+        }
       }
     }
   };

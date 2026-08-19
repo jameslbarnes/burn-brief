@@ -468,7 +468,9 @@ async function firstRunSequence() {
       .then((prof) => { phase("bio-done", { profile: prof?.profile, goals: prof?.goalsAdded }); return prof; });
     // Generous timeout: slow batches once blew the default 10 minutes and
     // killed the whole first run. Progress events prove liveness now.
-    const runP = engineStream(["run", "--max-batches", "5", "--min-priority", "0", "--progress"], {
+    // Concurrency 5 = a single wave for the 5 first-run batches; background
+    // ticks keep the politer default of 3.
+    const runP = engineStream(["run", "--max-batches", "5", "--min-priority", "0", "--progress", "--concurrency", "5"], {
       timeoutMs: 1_800_000,
       onEvent: (ev) => { if (ev.progress === "classify") phase("classify-progress", ev); },
     }).then((run) => { phase("classify-done", { items: run?.classify?.itemsCreated }); return run; });

@@ -919,8 +919,16 @@
     mask-image: linear-gradient(#000 65%, transparent);
   }
   .fr-bio .fr-bio-hint { font-size: 11px; color: var(--ink-3); }
-  .fr-bar { display: block; height: 2px; background: var(--hairline); margin: 9px 0 7px; }
+  .fr-bar { display: block; height: 2px; background: var(--hairline); margin: 9px 0 7px; position: relative; overflow: hidden; }
   .fr-bar-fill { display: block; height: 100%; width: 0%; background: var(--act); transition: width .6s ease; }
+  /* While the stage is active the bar breathes, so gaps between batch
+     completions never read as frozen. */
+  .fr-stage.active .fr-bar::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 30%; left: -30%;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--act) 40%, transparent), transparent);
+    animation: fr-sweep 1.8s linear infinite;
+  }
+  @keyframes fr-sweep { to { left: 100%; } }
   .fr-count { display: block; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-3); }
   .fr-finds { display: block; margin-top: 6px; }
   .fr-find {
@@ -2172,8 +2180,9 @@
       }
       const pct = det.messagesTotal ? Math.round((det.messagesDone / det.messagesTotal) * 100) : 0;
       holder.querySelector(".fr-bar-fill").style.width = pct + "%";
+      const passes = det.inFlight ? ` · ${det.inFlight} parallel ${det.inFlight === 1 ? "pass" : "passes"} reading` : "";
       holder.querySelector(".fr-count").textContent =
-        `${Number(det.messagesDone).toLocaleString()} of ${Number(det.messagesTotal).toLocaleString()} recent messages weighed · ${det.itemsCreated} found`;
+        `${Number(det.messagesDone).toLocaleString()} of ${Number(det.messagesTotal).toLocaleString()} recent messages weighed · ${det.itemsCreated} found${passes}`;
       const finds = holder.querySelector(".fr-finds");
       for (const t of det.titles || []) {
         const row = el(`<span class="fr-find"></span>`);
