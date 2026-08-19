@@ -370,6 +370,7 @@ app.whenReady().then(() => {
   // user has accepted the consent screen once. The flag lives in the store,
   // so it survives reinstalls of the app but not a data reset.
   ipcMain.handle("burnbrief:consent", () => engine(["consent"]));
+  ipcMain.handle("burnbrief:backendShow", () => engine(["backend", "show"]));
   ipcMain.handle("burnbrief:consentGrant", async () => {
     const c = await engine(["consent", "grant"]);
     if (c?.granted) startScheduler(true);

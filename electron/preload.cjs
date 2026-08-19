@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("burnBrief", {
   joinGroup: (url) => ipcRenderer.invoke("burnbrief:joinGroup", url),
   openWhatsApp: () => ipcRenderer.invoke("burnbrief:openWhatsApp"),
   consent: () => ipcRenderer.invoke("burnbrief:consent"),
+  backendShow: () => ipcRenderer.invoke("burnbrief:backendShow"),
   consentGrant: () => ipcRenderer.invoke("burnbrief:consentGrant"),
   onRefreshed: (cb) => ipcRenderer.on("burnbrief:refreshed", (_e, data) => cb(data)),
 });
